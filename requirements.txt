@@ -56,7 +56,6 @@ SQLAlchemy==2.0.23
 starlette==0.27.0
 sympy==1.13.1
 threadpoolctl==3.6.0
-torch==2.5.1+cpu
 tqdm==4.67.1
 typing_extensions==4.15.0
 uvicorn==0.24.0
