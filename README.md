@@ -1,7 +1,5 @@
 # E-API
 
-![CI/CD](https://github.com/luqastw/E-API/actions/workflows/ci-cd.yml/badge.svg)
-![Coverage](https://codecov.io/gh/luqastw/E-API/branch/main/graph/badge.svg)
 E-commerce REST API. FastAPI, PostgreSQL, Redis. Has an AI layer for
 semantic search and product recommendations using RAG (Groq + sentence-transformers).
 
