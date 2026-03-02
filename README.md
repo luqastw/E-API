@@ -1,113 +1,318 @@
 # E-API
 
-E-commerce REST API. FastAPI, PostgreSQL, Redis. Has an AI layer for
-semantic search and product recommendations using RAG (Groq + sentence-transformers).
+E-commerce REST API with an AI layer. Combines traditional catalog, cart and order operations with vector-based semantic search, personalized recommendations and a RAG-powered conversational assistant.
 
-## What it does
+Built with FastAPI, PostgreSQL, Redis and language models via Groq.
 
-- Authentication (register, login, JWT)
-- Users (profile CRUD, soft delete)
-- Products (CRUD, filtering by category/price/name, pagination, admin-only writes, soft delete)
-- Cart (add/remove/update items, price snapshot at add time)
-- Orders (checkout from cart, stock validation, status flow: pending -> paid -> shipped -> delivered | cancelled)
-- AI: semantic product search (cosine similarity on embeddings), personalized recommendations based on purchase history, RAG-powered chat assistant (LLaMA 3.3 70B via Groq)
+---
 
-## Dependencies
+## Table of Contents
 
-Python 3. PostgreSQL 16. Redis 7. See requirements.txt for the full list.
+- [Features](#features)
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [AI Layer](#ai-layer)
+- [Data Model](#data-model)
+- [API](#api)
+- [Local Setup](#local-setup)
+- [Tests](#tests)
+- [CI/CD](#cicd)
+- [Deployment](#deployment)
+- [License](#license)
 
-Key libraries: FastAPI, SQLAlchemy, Alembic, Pydantic, python-jose (JWT),
-bcrypt, sentence-transformers, scikit-learn, groq.
+---
 
-## Setup
+## Features
+
+**Authentication and authorization** -- Registration, login and JWT token issuance (HS256, configurable expiration). Role-based access control: regular user and administrator. Protected routes via dependency injection with `HTTPBearer`.
+
+**Product catalog** -- Full CRUD with filters by category, price range and text. Pagination with `limit`/`offset`. Categories defined by Enum (8 types). Soft delete to preserve order history.
+
+**Shopping cart** -- 1:1 model with user. Price snapshot at the time of addition (decoupled from future product price changes). Database constraints enforce `quantity > 0` and `price >= 0`.
+
+**Orders** -- Atomic checkout: validates stock, creates order with item snapshots, decrements stock and clears the cart in a single transaction. State machine for status (`pending` -> `paid` -> `shipped` -> `delivered` | `cancelled`) with transition validation.
+
+**Artificial intelligence** -- Semantic search with sentence-transformers, recommendations based on purchase history and RAG chat using LLaMA 3.3 70B via Groq. Detailed in the [AI Layer](#ai-layer) section.
+
+---
+
+## Architecture
+
+The project follows a layered separation with FastAPI dependency injection:
 
 ```
+Request -> Route -> Service -> Model/ORM -> Database
+                       |
+                    Schemas (Pydantic validation)
+```
+
+```
+src/
+  main.py               Entry point, router registration and middleware
+  api/
+    deps.py             Dependency injection (DB session, authentication, authorization)
+    routes/             Endpoint definitions per domain
+  core/
+    config.py           Settings via pydantic-settings (.env)
+    security.py         Bcrypt hashing, JWT encode/decode
+  models/               SQLAlchemy models (User, Product, Cart, CartItem, Order, OrderItem)
+  schemas/              Pydantic request/response schemas with custom validators
+  services/             Business logic (CartService, OrderService, AIService)
+  db/                   Engine, SessionLocal and base model
+tests/
+  conftest.py           Global fixtures (in-memory DB, users, tokens, products)
+  unit/                 Unit tests
+  integration/          Integration tests
+alembic/                Database migrations
+```
+
+Key design decisions:
+
+- **N+1 query prevention**: explicit use of `joinedload()` in cart and order services.
+- **Order data snapshots**: `OrderItem` stores the product name and price as a copy. The `product_id` is nullable with `ondelete="SET NULL"`, allowing orders to survive product deletion.
+- **Soft delete**: users and products are never physically removed. The `is_active` field preserves referential integrity and history.
+- **Base model with timestamps**: all models inherit `id`, `created_at` (server default) and `updated_at` (auto-updated).
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | FastAPI 0.104 |
+| ORM | SQLAlchemy 2.0 (declarative) |
+| Validation | Pydantic 2.5 |
+| Migrations | Alembic 1.12 |
+| Database | PostgreSQL 16 |
+| Cache | Redis 7 |
+| Authentication | JWT via python-jose (HS256) + bcrypt |
+| Embeddings | sentence-transformers (paraphrase-multilingual-MiniLM-L12-v2) |
+| Similarity | scikit-learn (cosine similarity) |
+| LLM | Groq API (LLaMA 3.3 70B Versatile) |
+| Server | Uvicorn (4 workers in production) |
+| Container | Docker multi-stage build |
+| CI/CD | GitHub Actions |
+| Deployment | Render |
+
+---
+
+## AI Layer
+
+The API exposes three AI features, all implemented in `AIService`:
+
+### Semantic Search
+
+Uses the `paraphrase-multilingual-MiniLM-L12-v2` model (sentence-transformers) to generate embeddings for the user query and all active products. Similarity is computed via cosine similarity (scikit-learn), returning the top-K results sorted by score.
+
+```
+GET /ai/search?q=wireless headphones for the gym
+```
+
+### Personalized Recommendations
+
+Analyzes the user's order history, identifies the most frequent purchase category and returns unpurchased products in that category. Falls back to the newest products if no purchase history exists.
+
+```
+GET /ai/recommend
+```
+
+### RAG Chat
+
+Receives a user message, retrieves the 3 most relevant products via semantic search and injects the catalog as context into the system prompt. The response is generated by LLaMA 3.3 70B via the Groq API (temperature=0.7, max 500 tokens).
+
+```
+POST /ai/chat
+{ "message": "what is the best laptop for programming?" }
+```
+
+---
+
+## Data Model
+
+```
+User 1---1 Cart 1---* CartItem *---1 Product
+  |                                     |
+  1                                     *
+  |                                     |
+  *                                     *
+Order 1---* OrderItem ............> Product (nullable FK, SET NULL on delete)
+```
+
+Highlights:
+
+- **Financial precision**: prices stored as `Numeric(10,2)`.
+- **Transactional integrity**: checkout executes stock validation, order creation, item copying and stock decrement in a single transaction. Automatic rollback on failure.
+- **Validated order state**: status transitions go through `_validate_status_transition()`, preventing invalid flows (e.g. `delivered` -> `pending`).
+- **Database constraints**: CHECK constraints on `CartItem` and `OrderItem` for quantities and prices, plus UNIQUE on `Cart.user_id`.
+- **Cascading**: cart deletion propagates to cart items via `cascade="all, delete-orphan"`.
+
+---
+
+## API
+
+### Authentication
+
+```
+POST   /auth/register              Create account
+POST   /auth/login                 Get JWT token
+```
+
+### Users
+
+```
+GET    /users/me                   Current user profile
+PATCH  /users/me                   Update profile
+DELETE /users/me                   Deactivate account (soft delete)
+```
+
+### Products
+
+```
+GET    /products/                  List (filter by category, price, name; pagination)
+GET    /products/{id}              Detail
+POST   /products/                  Create (admin)
+PATCH  /products/{id}              Update (admin)
+DELETE /products/{id}              Deactivate (admin, soft delete)
+```
+
+### Cart
+
+```
+GET    /cart/                      Full cart with items
+GET    /cart/summary               Totals (quantity and price)
+POST   /cart/items                 Add item
+PATCH  /cart/items/{id}            Update quantity
+DELETE /cart/items/{id}            Remove item
+DELETE /cart/                      Clear cart
+```
+
+### Orders
+
+```
+POST   /orders/                    Checkout (create order from cart)
+GET    /orders/                    List user orders
+GET    /orders/{id}                Order details
+PATCH  /orders/{id}/patch          Update status (admin)
+```
+
+### Artificial Intelligence
+
+```
+GET    /ai/search?q=               Semantic similarity search
+POST   /ai/chat                    RAG chat
+GET    /ai/recommend               Personalized recommendations
+```
+
+Interactive documentation available at `/docs` (Swagger UI) and `/redoc`.
+
+---
+
+## Local Setup
+
+### Prerequisites
+
+- Python 3.12+
+- Docker and Docker Compose
+
+### 1. Start infrastructure services
+
+```bash
 docker compose up -d
 ```
 
-That gives you PostgreSQL and Redis. Configure the rest in `.env`:
+This starts PostgreSQL 16 and Redis 7 with configured healthchecks.
+
+### 2. Configure environment variables
+
+Copy the example and fill in your values:
+
+```bash
+cp .env.prod.example .env
+```
+
+Required variables:
 
 ```
 DATABASE_URL=postgresql://user:password@localhost:5432/dbname
-REDIS_URL=redis://localhost:6379/0
-SECRET_KEY=<something-random>
-GROQ_API_KEY=<your-groq-key>
+SECRET_KEY=<generate with: python -c "import secrets; print(secrets.token_urlsafe(32))">
+GROQ_API_KEY=<your Groq API key>
 ```
 
-Install dependencies and run migrations:
+### 3. Install dependencies and run migrations
 
-```
+```bash
 pip install -r requirements.txt
 alembic upgrade head
 ```
 
-Run:
+### 4. Start the application
 
-```
+```bash
 uvicorn src.main:app --reload
 ```
 
-API docs at <http://localhost:8000/docs>.
+The API will be available at `http://localhost:8000`. Documentation at `http://localhost:8000/docs`.
 
-## Project structure
-
-```
-src/
-  main.py           -- app entry point, router registration
-  api/
-    deps.py         -- dependency injection (db session, auth)
-    routes/         -- endpoint definitions per domain
-  core/
-    config.py       -- settings from environment
-    security.py     -- password hashing, JWT encode/decode
-  models/           -- SQLAlchemy models (User, Product, Cart, Order)
-  schemas/          -- Pydantic request/response schemas
-  services/         -- business logic (cart, orders, AI)
-  db/               -- database engine and base model
-tests/
-alembic/            -- database migrations
-```
-
-## Endpoints
-
-```
-GET    /                       health check
-
-POST   /auth/register          create account
-POST   /auth/login             get JWT token
-
-GET    /users/me               current user profile
-PATCH  /users/me               update profile
-DELETE /users/me               deactivate account
-
-GET    /products/              list (filter, paginate)
-GET    /products/{id}          get one
-POST   /products/              create (admin)
-PATCH  /products/{id}          update (admin)
-DELETE /products/{id}          soft delete (admin)
-
-GET    /cart/                  full cart
-GET    /cart/summary           totals only
-POST   /cart/items             add item
-PATCH  /cart/items/{id}        update quantity
-DELETE /cart/items/{id}        remove item
-DELETE /cart/                  clear cart
-
-POST   /orders/                checkout
-GET    /orders/                list user orders
-GET    /orders/{id}            order details
-PATCH  /orders/{id}/patch      update status (admin)
-
-GET    /ai/search?q=           semantic search
-POST   /ai/chat                RAG chat
-GET    /ai/recommend           personalized recommendations
-```
+---
 
 ## Tests
 
-```
+The project uses pytest with isolated fixtures. Each test runs against an in-memory SQLite database, ensuring complete independence between tests.
+
+```bash
 pytest
 ```
+
+With coverage:
+
+```bash
+pytest --cov=src --cov-report=term-missing
+```
+
+Fixtures available in `conftest.py`: in-memory database, users (regular and admin), JWT tokens, products (in stock and out of stock) and a pre-populated cart.
+
+---
+
+## CI/CD
+
+The pipeline runs via GitHub Actions (`.github/workflows/ci-cd.yml`) on pushes to `master`/`develop` and pull requests to `master`.
+
+**Quality job:**
+1. Python 3.12 setup with dependency caching
+2. PostgreSQL 16 as a service container with healthcheck
+3. Dependency installation (includes PyTorch CPU for sentence-transformers)
+4. Alembic migrations
+5. Tests with pytest and coverage report
+6. Minimum 70% coverage threshold
+7. Upload to Codecov
+
+**Build job (after quality passes):**
+1. DockerHub login
+2. Multi-stage production image build
+3. Tags: `latest` + commit SHA
+4. Push to DockerHub with layer caching
+
+---
+
+## Deployment
+
+### Docker (production)
+
+The production image uses a multi-stage build:
+
+- **Builder**: installs dependencies in an isolated virtualenv and pre-downloads the embedding model.
+- **Runtime**: minimal base (`python:3.12-slim`), copies only the virtualenv, runs as an unprivileged user (`appuser`), healthcheck via curl every 30s.
+
+```bash
+docker build -f Dockerfile.prod -t e-api .
+docker run -p 8000:8000 --env-file .env e-api
+```
+
+### Render
+
+The project includes `render.yaml` for direct deployment on Render with managed PostgreSQL, automatic `SECRET_KEY` generation and build via `build.sh`.
+
+---
 
 ## License
 
