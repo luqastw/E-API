@@ -107,7 +107,7 @@ class CartService:
         if product.stock < update_data.quantity:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Estoque insuficiente. Disponível: {product.stock}",
+                detail=f"Estoque insuficiente. Disponível: {product.stock}",
             )
 
         cart_item.quantity = update_data.quantity

@@ -81,9 +81,9 @@ def login(credentials: UserLogin, db: Session = Depends(get_db)) -> TokenRespons
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    acess_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    acess_token = create_access_token(
-        data={"sub": str(user.id)}, expires_delta=acess_token_expires
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": str(user.id)}, expires_delta=access_token_expires
     )
 
-    return TokenResponse(acess_token=acess_token, token_type="bearer")
+    return TokenResponse(access_token=access_token, token_type="bearer")

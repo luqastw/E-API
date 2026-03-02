@@ -36,5 +36,5 @@ class UserResponse(UserBase):
 
 
 class TokenResponse(BaseModel):
-    acess_token: str
+    access_token: str
     token_type: str = "bearer"

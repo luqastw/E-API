@@ -139,7 +139,7 @@ def get_order(
 def update_order_status(
     order_id: int,
     status_update: OrderUpdateStatus,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> OrderResponse:
     """Transições: pending→paid/cancelled, paid→shipped/cancelled, shipped→delivered."""

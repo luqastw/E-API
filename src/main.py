@@ -1,8 +1,18 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.core.config import settings
 from src.api.routes import auth, users, products, cart, orders, ai
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print(f"🚀 {settings.APP_NAME} v{settings.VERSION} started!")
+    print(f"📚 Documentation: http://localhost:8000/docs")
+    print(f"🔒 Debug mode: {settings.DEBUG}")
+    yield
+
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -10,12 +20,13 @@ app = FastAPI(
     description="AI-powered e-commerce API with intelligent product recommendations",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -41,9 +52,3 @@ def health_check():
         "version": settings.VERSION,
     }
 
-
-@app.on_event("startup")
-async def startup_event():
-    print(f"🚀 {settings.APP_NAME} v{settings.VERSION} started!")
-    print(f"📚 Documentation: http://localhost:8000/docs")
-    print(f"🔒 Debug mode: {settings.DEBUG}")

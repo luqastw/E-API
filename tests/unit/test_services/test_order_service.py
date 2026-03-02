@@ -200,7 +200,7 @@ class TestValidateStatusTransition:
     ])
     def test_status_transitions(self, current, new, expected):
         """Deve validar transições de status corretamente."""
-        result = OrderService._validade_status_transition(current, new)
+        result = OrderService._validate_status_transition(current, new)
 
         assert result == expected
 

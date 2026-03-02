@@ -138,7 +138,7 @@ class TestLogin:
 
         assert response.status_code == 200
         data = response.json()
-        assert "acess_token" in data
+        assert "access_token" in data
         assert data["token_type"] == "bearer"
 
     def test_login_wrong_password(self, client, test_user):
@@ -192,7 +192,7 @@ class TestLogin:
                 "password": "password123",
             },
         )
-        token = login_response.json()["acess_token"]
+        token = login_response.json()["access_token"]
 
         protected_response = client.get(
             "/cart/",

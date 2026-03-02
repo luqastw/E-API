@@ -123,7 +123,7 @@ class OrderService:
         return order
 
     @staticmethod
-    def _validade_status_transition(
+    def _validate_status_transition(
         current_status: OrderStatus, new_status: OrderStatus
     ) -> bool:
         """Transições válidas: pending→paid/cancelled, paid→shipped/cancelled, shipped→delivered."""
@@ -151,7 +151,7 @@ class OrderService:
                 detail=f"Pedido {order_id} não encontrado.",
             )
 
-        if not OrderService._validade_status_transition(order.status, new_status):
+        if not OrderService._validate_status_transition(order.status, new_status):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(

@@ -175,7 +175,7 @@ class TestGetOrder:
 class TestUpdateOrderStatus:
     """Testes para PATCH /orders/{order_id}/patch."""
 
-    def test_update_status_success(self, client, auth_headers, test_product):
+    def test_update_status_success(self, client, auth_headers, admin_headers, test_product):
         """Deve atualizar status do pedido."""
         client.post(
             "/cart/items",
@@ -187,14 +187,14 @@ class TestUpdateOrderStatus:
 
         response = client.patch(
             f"/orders/{order_id}/patch",
-            headers=auth_headers,
+            headers=admin_headers,
             json={"status": "paid"},
         )
 
         assert response.status_code == 200
         assert response.json()["status"] == "paid"
 
-    def test_update_status_invalid_transition(self, client, auth_headers, test_product):
+    def test_update_status_invalid_transition(self, client, auth_headers, admin_headers, test_product):
         """Deve rejeitar transição inválida."""
         client.post(
             "/cart/items",
@@ -206,24 +206,24 @@ class TestUpdateOrderStatus:
 
         response = client.patch(
             f"/orders/{order_id}/patch",
-            headers=auth_headers,
+            headers=admin_headers,
             json={"status": "delivered"},
         )
 
         assert response.status_code == 400
         assert "Transição inválida" in response.json()["detail"]
 
-    def test_update_status_order_not_found(self, client, auth_headers):
+    def test_update_status_order_not_found(self, client, admin_headers):
         """Deve retornar 404 se pedido não existir."""
         response = client.patch(
             "/orders/99999/patch",
-            headers=auth_headers,
+            headers=admin_headers,
             json={"status": "paid"},
         )
 
         assert response.status_code == 404
 
-    def test_update_status_full_flow(self, client, auth_headers, test_product):
+    def test_update_status_full_flow(self, client, auth_headers, admin_headers, test_product):
         """Deve permitir fluxo completo de status."""
         client.post(
             "/cart/items",
@@ -235,21 +235,21 @@ class TestUpdateOrderStatus:
 
         response = client.patch(
             f"/orders/{order_id}/patch",
-            headers=auth_headers,
+            headers=admin_headers,
             json={"status": "paid"},
         )
         assert response.json()["status"] == "paid"
 
         response = client.patch(
             f"/orders/{order_id}/patch",
-            headers=auth_headers,
+            headers=admin_headers,
             json={"status": "shipped"},
         )
         assert response.json()["status"] == "shipped"
 
         response = client.patch(
             f"/orders/{order_id}/patch",
-            headers=auth_headers,
+            headers=admin_headers,
             json={"status": "delivered"},
         )
         assert response.json()["status"] == "delivered"
