@@ -20,7 +20,18 @@ router = APIRouter()
     "/search",
     response_model=SearchResponse,
     summary="Busca semântica de produtos.",
-    description="Encontra produtos por similaridade de significado, sem se limitar a palavras-chave.",
+    description="""Encontra produtos por **similaridade de significado** usando embeddings (`paraphrase-multilingual-MiniLM-L12-v2`).
+
+Diferente da busca textual, entende sinônimos e contexto. Exemplos:
+- `"fone sem fio para academia"` → encontra headphones bluetooth esportivos
+- `"presente para criança pequena"` → encontra brinquedos educativos
+
+**Acesso público.** Retorna os produtos mais similares com score de 0 a 1.
+""",
+    response_description="Lista de produtos ordenados por similaridade.",
+    responses={
+        422: {"description": "Query muito curta (mínimo 5 caracteres) ou muito longa."},
+    },
 )
 def semantic_search(
     q: str = Query(..., min_length=5, max_length=200),
@@ -40,8 +51,24 @@ def semantic_search(
 @router.post(
     "/chat",
     response_model=ChatResponse,
-    summary="Conversar e perguntar para a IA do sistema.",
-    description="Utiliza RAG para buscar por produtos utilizando IA.",
+    summary="Chat com assistente de vendas (RAG).",
+    description="""Conversa com um assistente de vendas alimentado por **RAG** (Retrieval-Augmented Generation).
+
+O sistema:
+1. Vetoriza a mensagem do usuário
+2. Busca os 3 produtos mais relevantes no catálogo
+3. Injeta esses produtos como contexto no prompt
+4. Gera a resposta via **LLaMA 3.3 70B** (Groq)
+
+O assistente só recomenda produtos existentes no catálogo e informa preços em R$.
+
+**Acesso público.**
+""",
+    response_description="Resposta do assistente baseada no catálogo.",
+    responses={
+        422: {"description": "Mensagem muito curta ou muito longa."},
+        503: {"description": "Serviço de IA temporariamente indisponível."},
+    },
 )
 def chat_with_ai(body: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
     ai_response = AIService.chat_about_products(db, body.message)
@@ -52,8 +79,20 @@ def chat_with_ai(body: ChatRequest, db: Session = Depends(get_db)) -> ChatRespon
 @router.get(
     "/recommend",
     response_model=RecommendationResponse,
-    summary="Mostra recomendações de produtos.",
-    description="Se baseia nos produtos que o cliente já comprou e mostra recomendações.",
+    summary="Recomendações personalizadas.",
+    description="""Retorna produtos recomendados com base no **histórico de compras** do usuário.
+
+Algoritmo:
+1. Analisa todos os pedidos do usuário
+2. Identifica a categoria mais comprada
+3. Retorna produtos dessa categoria que o usuário ainda **não comprou**
+
+Se o usuário não tiver histórico, retorna os produtos mais recentes do catálogo.
+""",
+    response_description="Lista de produtos recomendados.",
+    responses={
+        401: {"description": "Token inválido ou ausente."},
+    },
 )
 def get_recommendations(
     limit: int = 5,

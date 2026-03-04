@@ -17,6 +17,19 @@ class ProductCreate(ProductBase):
     stock: int = Field(default=0, gt=0)
     image_url: Optional[str] = Field(None, max_length=500)
 
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "name": "Notebook Dell Inspiron 15",
+                "description": "Processador Intel Core i5, 8GB RAM, SSD 256GB",
+                "price": 3499.90,
+                "category": "eletronicos",
+                "stock": 10,
+                "image_url": "https://example.com/notebook.jpg",
+            }
+        }
+    )
+
     @field_validator("price")
     @classmethod
     def validate_price_precision(cls, value: Decimal) -> Decimal:
@@ -39,6 +52,15 @@ class ProductUpdate(BaseModel):
     stock: Optional[int] = Field(None, ge=0)
     image_url: Optional[str] = Field(None, max_length=500)
     is_active: Optional[bool] = None
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "price": 2999.90,
+                "stock": 15,
+            }
+        }
+    )
 
     @field_validator("price")
     @classmethod

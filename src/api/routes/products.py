@@ -16,7 +16,13 @@ router = APIRouter()
     response_model=ProductResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Criar produto.",
-    description="Cria novo produto. Somente administradores.",
+    description="Cria um novo produto no catálogo. **Somente administradores.**",
+    response_description="Produto criado com sucesso.",
+    responses={
+        401: {"description": "Token inválido ou ausente."},
+        403: {"description": "Sem permissão. Apenas administradores."},
+        422: {"description": "Dados inválidos (ex: preço negativo, categoria inexistente)."},
+    },
 )
 def create_product(
     product_data: ProductCreate,
@@ -44,7 +50,15 @@ def create_product(
     "/",
     response_model=List[ProductResponse],
     summary="Listar produtos.",
-    description="Lista produtos com filtro e paginação. Acesso público.",
+    description="""Lista produtos ativos com suporte a filtros e paginação. **Acesso público.**
+
+Filtros disponíveis:
+- `category`: filtra por categoria (`eletronicos`, `roupas`, `livros`, `alimentos`, `esportes`, `casa`, `beleza`, `brinquedos`)
+- `min_price` / `max_price`: faixa de preço em R$
+- `search`: busca textual pelo nome do produto
+- `limit` / `offset`: paginação
+""",
+    response_description="Lista de produtos ativos.",
 )
 def list_products(
     db: Session = Depends(get_db),
@@ -80,7 +94,11 @@ def list_products(
     "/{product.id}",
     response_model=ProductResponse,
     summary="Obter detalhes de um produto.",
-    description="Retorna detalhes de um produto específico. Acesso público.",
+    description="Retorna os detalhes completos de um produto ativo pelo seu ID. **Acesso público.**",
+    response_description="Dados do produto.",
+    responses={
+        404: {"description": "Produto não encontrado ou inativo."},
+    },
 )
 def get_product(product_id: int, db: Session = Depends(get_db)) -> ProductResponse:
     product = (
@@ -102,7 +120,14 @@ def get_product(product_id: int, db: Session = Depends(get_db)) -> ProductRespon
     "/{product.id}",
     response_model=ProductResponse,
     summary="Atualizar produto.",
-    description="Atualiza dados de um produto. Somente administradores.",
+    description="Atualiza parcialmente os dados de um produto. **Somente administradores.**",
+    response_description="Produto atualizado com sucesso.",
+    responses={
+        401: {"description": "Token inválido ou ausente."},
+        403: {"description": "Sem permissão. Apenas administradores."},
+        404: {"description": "Produto não encontrado."},
+        422: {"description": "Dados inválidos."},
+    },
 )
 def update_product(
     product_id: int,
@@ -136,7 +161,14 @@ def update_product(
     "/{product.id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Desativar produto.",
-    description="Desativa um produto (soft delete). Somente administradores.",
+    description="Realiza **soft delete** do produto (marca como inativo). O produto não aparece mais no catálogo, mas pedidos existentes com ele são preservados. **Somente administradores.**",
+    response_description="Produto desativado. Sem conteúdo.",
+    responses={
+        400: {"description": "Produto já está desativado."},
+        401: {"description": "Token inválido ou ausente."},
+        403: {"description": "Sem permissão. Apenas administradores."},
+        404: {"description": "Produto não encontrado."},
+    },
 )
 def delete_product(
     product_id: int,

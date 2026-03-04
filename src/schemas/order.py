@@ -49,3 +49,11 @@ class OrderSummary(BaseModel):
 class OrderUpdateStatus(BaseModel):
     """Transições: pending→paid/cancelled, paid→shipped/cancelled, shipped→delivered."""
     status: Optional[OrderStatus] = None
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "status": "paid",
+            }
+        }
+    )

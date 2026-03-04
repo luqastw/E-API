@@ -6,6 +6,14 @@ from src.schemas.product import ProductResponse
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=5, max_length=2000)
 
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "message": "Qual o melhor notebook para programação?",
+            }
+        }
+    )
+
 
 class ChatResponse(BaseModel):
     user_message: str

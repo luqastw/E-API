@@ -10,11 +10,26 @@ class CartItemBase(BaseModel):
 
 
 class CartItemCreate(CartItemBase):
-    pass
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "product_id": 1,
+                "quantity": 2,
+            }
+        }
+    )
 
 
 class CartItemUpdate(BaseModel):
     quantity: int = Field(gt=0, le=100)
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "quantity": 3,
+            }
+        }
+    )
 
 
 class CartItemResponse(BaseModel):

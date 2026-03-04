@@ -19,7 +19,11 @@ router = APIRouter()
     "/",
     response_model=CartResponse,
     summary="Obter carrinho completo.",
-    description="Retorna o carrinho com todos os itens e totais calculados.",
+    description="Retorna o carrinho com todos os itens, nome do produto, imagem, preço no momento da adição e subtotais calculados.",
+    response_description="Carrinho completo com itens e totais.",
+    responses={
+        401: {"description": "Token inválido ou ausente."},
+    },
 )
 def get_cart(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
@@ -63,7 +67,11 @@ def get_cart(
     "/summary",
     response_model=CartSummary,
     summary="Resumo do carrinho.",
-    description="Retorna apenas totais (útil para a badge do carrinho na UI).",
+    description="Retorna apenas a quantidade total de itens e o valor total. Útil para atualizar a **badge do carrinho** na interface sem carregar todos os dados.",
+    response_description="Totais do carrinho.",
+    responses={
+        401: {"description": "Token inválido ou ausente."},
+    },
 )
 def get_cart_summary(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
@@ -83,7 +91,14 @@ def get_cart_summary(
     response_model=CartItemResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Adicionar item ao carrinho.",
-    description="Adiciona item ao carrinho ou aumenta a quantidade se já existir.",
+    description="Adiciona um produto ao carrinho. Se o produto já estiver no carrinho, a quantidade é somada. O preço atual do produto é armazenado como snapshot (imune a mudanças futuras de preço).",
+    response_description="Item adicionado/atualizado no carrinho.",
+    responses={
+        400: {"description": "Estoque insuficiente."},
+        401: {"description": "Token inválido ou ausente."},
+        404: {"description": "Produto não encontrado ou inativo."},
+        422: {"description": "Dados inválidos (ex: quantidade zerada)."},
+    },
 )
 def add_item_to_cart(
     item_data: CartItemCreate,
@@ -111,7 +126,14 @@ def add_item_to_cart(
     "/items/{item_id}",
     response_model=CartItemResponse,
     summary="Atualizar quantidade do item.",
-    description="Atualiza a quantidade de um item do carrinho.",
+    description="Substitui a quantidade de um item específico no carrinho. A nova quantidade é validada contra o estoque disponível.",
+    response_description="Item atualizado.",
+    responses={
+        400: {"description": "Estoque insuficiente para a quantidade solicitada."},
+        401: {"description": "Token inválido ou ausente."},
+        404: {"description": "Item não encontrado no carrinho."},
+        422: {"description": "Dados inválidos (ex: quantidade zerada)."},
+    },
 )
 def update_cart_item(
     item_id: int,
@@ -142,7 +164,12 @@ def update_cart_item(
     "/items/{item_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Remover item do carrinho.",
-    description="Remove um item específico do carrinho.",
+    description="Remove um item específico do carrinho pelo seu ID.",
+    response_description="Item removido. Sem conteúdo.",
+    responses={
+        401: {"description": "Token inválido ou ausente."},
+        404: {"description": "Item não encontrado no carrinho."},
+    },
 )
 def remove_item_cart(
     item_id: int,
@@ -158,7 +185,11 @@ def remove_item_cart(
     "/",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Limpar carrinho.",
-    description="Remove todos os itens do carrinho.",
+    description="Remove **todos os itens** do carrinho de uma vez.",
+    response_description="Carrinho esvaziado. Sem conteúdo.",
+    responses={
+        401: {"description": "Token inválido ou ausente."},
+    },
 )
 def clear_cart(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)

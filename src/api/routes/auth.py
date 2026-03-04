@@ -17,6 +17,11 @@ router = APIRouter()
     status_code=status.HTTP_201_CREATED,
     summary="Registro de novo usuário.",
     description="Cria uma nova conta de usuário com email, username e senha.",
+    response_description="Usuário criado com sucesso.",
+    responses={
+        400: {"description": "Email ou username já cadastrado."},
+        422: {"description": "Dados de entrada inválidos (ex: senha muito curta, email inválido)."},
+    },
 )
 def register(user_data: UserCreate, db: Session = Depends(get_db)) -> UserResponse:
     existing_email = db.query(User).filter(User.email == user_data.email).first()
@@ -55,7 +60,12 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)) -> UserRespon
     response_model=TokenResponse,
     status_code=status.HTTP_200_OK,
     summary="Login de usuário.",
-    description="Autentica usuário com email e senha, retorna JWT Token.",
+    description="Autentica usuário com email e senha. Retorna um **JWT Bearer token** com validade configurável.",
+    response_description="Token JWT gerado com sucesso.",
+    responses={
+        401: {"description": "Email/senha incorretos ou conta inativa."},
+        422: {"description": "Dados de entrada inválidos."},
+    },
 )
 def login(credentials: UserLogin, db: Session = Depends(get_db)) -> TokenResponse:
     user = db.query(User).filter(User.email == credentials.email).first()

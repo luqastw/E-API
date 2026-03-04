@@ -21,8 +21,22 @@ router = APIRouter()
     "/",
     response_model=OrderResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Finaliza compra (checkout).",
-    description="Cria pedido através do carrinho do usuário autenticado.",
+    summary="Finalizar compra (checkout).",
+    description="""Converte o carrinho em pedido de forma **atômica**:
+
+1. Valida estoque de todos os itens
+2. Cria o pedido com status `pending`
+3. Copia nome e preço de cada item (snapshot imune a mudanças futuras)
+4. Decrementa o estoque dos produtos
+5. Limpa o carrinho
+
+Em caso de falha em qualquer etapa, toda a operação é revertida (rollback).
+""",
+    response_description="Pedido criado com status `pending`.",
+    responses={
+        400: {"description": "Carrinho vazio ou estoque insuficiente para algum item."},
+        401: {"description": "Token inválido ou ausente."},
+    },
 )
 def checkout(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
@@ -58,8 +72,12 @@ def checkout(
 @router.get(
     "/",
     response_model=List[OrderSummary],
-    summary="Lista pedidos do usuário.",
-    description="Retorna historico de pedidos com paginação (resumido, sem detalhes).",
+    summary="Listar pedidos do usuário.",
+    description="Retorna o histórico de pedidos do usuário autenticado com paginação. Cada item é um resumo (sem detalhes dos produtos).",
+    response_description="Lista de pedidos resumidos.",
+    responses={
+        401: {"description": "Token inválido ou ausente."},
+    },
 )
 def list_orders(
     current_user: User = Depends(get_current_user),
@@ -90,7 +108,12 @@ def list_orders(
     "/{order_id}",
     response_model=OrderResponse,
     summary="Obter detalhes de um pedido.",
-    description="Retorna pedido completo com todos os itens.",
+    description="Retorna o pedido completo com todos os itens, preços e status. Um usuário só pode ver seus próprios pedidos.",
+    response_description="Pedido completo com itens.",
+    responses={
+        401: {"description": "Token inválido ou ausente."},
+        404: {"description": "Pedido não encontrado ou não pertence ao usuário."},
+    },
 )
 def get_order(
     order_id: int,
@@ -133,8 +156,26 @@ def get_order(
 @router.patch(
     "/{order_id}/patch",
     response_model=OrderResponse,
-    summary="Atualizar status de um pedido (admin).",
-    description="Atualiza status de um pedido. Somente administradores.",
+    summary="Atualizar status de um pedido.",
+    description="""Avança o status de um pedido seguindo a máquina de estados. **Somente administradores.**
+
+Transições válidas:
+
+| Status atual | Transições permitidas |
+|--------------|-----------------------|
+| `pending`    | `paid`, `cancelled`   |
+| `paid`       | `shipped`, `cancelled`|
+| `shipped`    | `delivered`           |
+| `delivered`  | — (estado final)      |
+| `cancelled`  | — (estado final)      |
+""",
+    response_description="Pedido com status atualizado.",
+    responses={
+        400: {"description": "Transição de status inválida."},
+        401: {"description": "Token inválido ou ausente."},
+        403: {"description": "Sem permissão. Apenas administradores."},
+        404: {"description": "Pedido não encontrado."},
+    },
 )
 def update_order_status(
     order_id: int,
