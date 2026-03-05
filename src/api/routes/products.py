@@ -1,14 +1,26 @@
+import json
 from typing import List
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 from sqlalchemy.orm import Session
+import redis as redis_lib
 
-from src.api.deps import get_db, get_current_admin
+from src.api.deps import get_db, get_current_admin, get_redis
 from src.models.product import Product
 from src.models.enums import ProductCategory
 from src.models.user import User
 from src.schemas.product import ProductCreate, ProductUpdate, ProductResponse
 
 router = APIRouter()
+
+_PRODUCTS_CACHE_TTL = 120  # 2 minutos
+
+
+def _invalidate_product_caches(cache: redis_lib.Redis) -> None:
+    """Apaga todos os caches que dependem do catálogo de produtos."""
+    for pattern in ("products:list:*", "ai:search:*"):
+        keys = cache.keys(pattern)
+        if keys:
+            cache.delete(*keys)
 
 
 @router.post(
@@ -28,6 +40,7 @@ def create_product(
     product_data: ProductCreate,
     current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
+    cache: redis_lib.Redis = Depends(get_redis),
 ) -> ProductResponse:
     db_product = Product(
         name=product_data.name,
@@ -42,6 +55,8 @@ def create_product(
     db.add(db_product)
     db.commit()
     db.refresh(db_product)
+
+    _invalidate_product_caches(cache)
 
     return ProductResponse.model_validate(db_product)
 
@@ -62,6 +77,7 @@ Filtros disponíveis:
 )
 def list_products(
     db: Session = Depends(get_db),
+    cache: redis_lib.Redis = Depends(get_redis),
     limit: int = Query(default=10, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     category: ProductCategory | None = Query(default=None),
@@ -69,6 +85,11 @@ def list_products(
     max_price: float | None = Query(default=None, ge=0),
     search: str | None = Query(default=None, min_length=1),
 ) -> List[ProductResponse]:
+    cache_key = f"products:list:{category}:{min_price}:{max_price}:{search}:{limit}:{offset}"
+    cached = cache.get(cache_key)
+    if cached:
+        return json.loads(cached)
+
     query = db.query(Product).filter(Product.is_active == True)
 
     if category:
@@ -86,8 +107,11 @@ def list_products(
     query = query.order_by(Product.id)
 
     products = query.offset(offset).limit(limit).all()
+    result = [ProductResponse.model_validate(p) for p in products]
 
-    return [ProductResponse.model_validate(p) for p in products]
+    cache.setex(cache_key, _PRODUCTS_CACHE_TTL, json.dumps([p.model_dump(mode="json") for p in result]))
+
+    return result
 
 
 @router.get(
@@ -134,6 +158,7 @@ def update_product(
     product_update: ProductUpdate,
     current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
+    cache: redis_lib.Redis = Depends(get_redis),
 ) -> ProductResponse:
     product = db.query(Product).filter(Product.id == product_id).first()
 
@@ -153,6 +178,8 @@ def update_product(
 
     db.commit()
     db.refresh(product)
+
+    _invalidate_product_caches(cache)
 
     return ProductResponse.model_validate(product)
 
@@ -174,6 +201,7 @@ def delete_product(
     product_id: int,
     current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
+    cache: redis_lib.Redis = Depends(get_redis),
 ):
     """Soft delete - preserva histórico de pedidos."""
     product = db.query(Product).filter(Product.id == product_id).first()
@@ -191,5 +219,7 @@ def delete_product(
 
     product.is_active = False
     db.commit()
+
+    _invalidate_product_caches(cache)
 
     return None

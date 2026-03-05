@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import desc
 from sqlalchemy.orm import Session
+import redis as redis_lib
 
-from src.api.deps import get_db, get_current_user
+from src.api.deps import get_db, get_current_user, get_redis
 from src.models.user import User
 from src.services.ai_service import AIService
 from src.schemas.ai import (
@@ -37,11 +37,17 @@ def semantic_search(
     q: str = Query(..., min_length=5, max_length=200),
     limit: int = Query(default=5, ge=1, le=20),
     db: Session = Depends(get_db),
+    cache: redis_lib.Redis = Depends(get_redis),
 ) -> SearchResponse:
-    results = AIService.search_similar_products(db, q, limit)
+    results = AIService.search_similar_products(db, q, limit, cache)
 
     items = [
-        SearchResultItem(product=item["product"], similarity=item["similarity"])
+        SearchResultItem(
+            # quando vem do cache é dict; quando vem do banco é objeto Product
+            product=item["product"] if isinstance(item["product"], dict)
+                    else item["product"].__dict__,
+            similarity=item["similarity"],
+        )
         for item in results
     ]
 
@@ -70,8 +76,12 @@ O assistente só recomenda produtos existentes no catálogo e informa preços em
         503: {"description": "Serviço de IA temporariamente indisponível."},
     },
 )
-def chat_with_ai(body: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
-    ai_response = AIService.chat_about_products(db, body.message)
+def chat_with_ai(
+    body: ChatRequest,
+    db: Session = Depends(get_db),
+    cache: redis_lib.Redis = Depends(get_redis),
+) -> ChatResponse:
+    ai_response = AIService.chat_about_products(db, body.message, cache=cache)
 
     return ChatResponse(user_message=body.message, ai_response=ai_response)
 
@@ -98,9 +108,10 @@ def get_recommendations(
     limit: int = 5,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    cache: redis_lib.Redis = Depends(get_redis),
 ) -> RecommendationResponse:
     recommendations = AIService.get_personalized_recommendations(
-        db, current_user.id, limit
+        db, current_user.id, limit, cache
     )
 
     return RecommendationResponse(recommendations=recommendations)

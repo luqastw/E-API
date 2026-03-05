@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List
 from decimal import Decimal
+import redis as redis_lib
 
-from src.api.deps import get_db, get_current_user, get_current_admin
+from src.api.deps import get_db, get_current_user, get_current_admin, get_redis
 from src.models.order import Order, OrderItem
 from src.models.user import User
 from src.schemas.order import (
@@ -39,10 +40,17 @@ Em caso de falha em qualquer etapa, toda a operação é revertida (rollback).
     },
 )
 def checkout(
-    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    cache: redis_lib.Redis = Depends(get_redis),
 ) -> OrderResponse:
     """Valida estoque → cria pedido PENDING → copia itens → atualiza estoque → limpa carrinho."""
     order = OrderService.create_order(db, current_user.id)
+
+    # histórico do usuário mudou: invalida cache de recomendações
+    keys = cache.keys(f"ai:recommend:{current_user.id}:*")
+    if keys:
+        cache.delete(*keys)
 
     items_response = []
     for item in order.items:

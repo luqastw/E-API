@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from src.db.session import SessionLocal
 from src.models.user import User
 from src.core.security import decode_access_token
+from src.db.redis import get_redis
 
 security = HTTPBearer()
 
