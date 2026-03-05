@@ -12,6 +12,7 @@ Built with FastAPI, PostgreSQL, Redis and language models via Groq.
 - [Architecture](#architecture)
 - [Tech Stack](#tech-stack)
 - [AI Layer](#ai-layer)
+- [Cache Layer](#cache-layer)
 - [Data Model](#data-model)
 - [API](#api)
 - [Local Setup](#local-setup)
@@ -34,6 +35,8 @@ Built with FastAPI, PostgreSQL, Redis and language models via Groq.
 
 **Artificial intelligence** -- Semantic search with sentence-transformers, recommendations based on purchase history and RAG chat using LLaMA 3.3 70B via Groq. Detailed in the [AI Layer](#ai-layer) section.
 
+**Cache layer** -- Redis 7 cache on the three most expensive read paths: product listing, semantic search and personalized recommendations. Automatic invalidation on writes. Detailed in the [Cache Layer](#cache-layer) section.
+
 ---
 
 ## Architecture
@@ -48,17 +51,17 @@ Request -> Route -> Service -> Model/ORM -> Database
 
 ```
 src/
-  main.py               Entry point, router registration and middleware
+  main.py               Entry point, router registration, middleware and lifespan
   api/
-    deps.py             Dependency injection (DB session, authentication, authorization)
+    deps.py             Dependency injection (DB session, Redis, authentication, authorization)
     routes/             Endpoint definitions per domain
   core/
     config.py           Settings via pydantic-settings (.env)
     security.py         Bcrypt hashing, JWT encode/decode
   models/               SQLAlchemy models (User, Product, Cart, CartItem, Order, OrderItem)
-  schemas/              Pydantic request/response schemas with custom validators
+  schemas/              Pydantic request/response schemas with validators and OpenAPI examples
   services/             Business logic (CartService, OrderService, AIService)
-  db/                   Engine, SessionLocal and base model
+  db/                   Engine, SessionLocal, Redis client and base model
 tests/
   conftest.py           Global fixtures (in-memory DB, users, tokens, products)
   unit/                 Unit tests
@@ -72,6 +75,7 @@ Key design decisions:
 - **Order data snapshots**: `OrderItem` stores the product name and price as a copy. The `product_id` is nullable with `ondelete="SET NULL"`, allowing orders to survive product deletion.
 - **Soft delete**: users and products are never physically removed. The `is_active` field preserves referential integrity and history.
 - **Base model with timestamps**: all models inherit `id`, `created_at` (server default) and `updated_at` (auto-updated).
+- **Cache-aside pattern**: Redis cache is populated lazily on first read and invalidated automatically on writes, keeping data consistent without complexity.
 
 ---
 
@@ -123,6 +127,27 @@ Receives a user message, retrieves the 3 most relevant products via semantic sea
 ```
 POST /ai/chat
 { "message": "what is the best laptop for programming?" }
+```
+
+> All three AI endpoints benefit from Redis cache — repeated queries skip the embedding model and return in milliseconds. See the [Cache Layer](#cache-layer) section.
+
+---
+
+## Cache Layer
+
+Redis 7 is used as a **cache-aside** layer on the three most expensive read paths. The cache is populated lazily on the first request and invalidated automatically when the underlying data changes.
+
+| Cache key | TTL | Invalidated by |
+|-----------|-----|----------------|
+| `ai:search:{query}:{limit}` | 5 min | product created / updated / deactivated |
+| `products:list:{filters}` | 2 min | product created / updated / deactivated |
+| `ai:recommend:{user_id}:{limit}` | 15 min | user completes checkout |
+
+The client is instantiated once in `src/db/redis.py` using `redis.from_url()` with an internal connection pool and exposed as a FastAPI dependency via `get_redis()` in `src/api/deps.py`, following the same pattern as `get_db()`.
+
+```python
+# injecting Redis in any route
+cache: redis.Redis = Depends(get_redis)
 ```
 
 ---
@@ -203,7 +228,7 @@ POST   /ai/chat                    RAG chat
 GET    /ai/recommend               Personalized recommendations
 ```
 
-Interactive documentation available at `/docs` (Swagger UI) and `/redoc`.
+Interactive documentation available at `/docs` (Swagger UI) and `/redoc`. All endpoints include request body examples, response descriptions and documented error codes.
 
 ---
 
@@ -234,6 +259,7 @@ Required variables:
 
 ```
 DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+REDIS_URL=redis://localhost:6379/0
 SECRET_KEY=<generate with: python -c "import secrets; print(secrets.token_urlsafe(32))">
 GROQ_API_KEY=<your Groq API key>
 ```
