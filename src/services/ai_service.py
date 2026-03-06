@@ -12,7 +12,15 @@ from src.models.product import Product
 from src.models.order import Order
 
 groq_client = Groq(api_key=settings.GROQ_API_KEY)
-embedding_model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+_embedding_model: Optional[SentenceTransformer] = None
+
+
+def _get_embedding_model() -> SentenceTransformer:
+    """Lazy-loads the embedding model on first use to avoid blocking at import time."""
+    global _embedding_model
+    if _embedding_model is None:
+        _embedding_model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+    return _embedding_model
 
 
 class AIService:
@@ -27,7 +35,7 @@ class AIService:
         Preço: R$ {product.price}
         """.strip()
 
-        embedding = embedding_model.encode(text)
+        embedding = _get_embedding_model().encode(text)
 
         return embedding
 
@@ -49,7 +57,7 @@ class AIService:
                 # cache hit: deserializa e retorna sem tocar no banco ou no modelo
                 return json.loads(cached)
 
-        query_embedding = embedding_model.encode(query)
+        query_embedding = _get_embedding_model().encode(query)
 
         products = db.query(Product).filter(Product.is_active == True).all()
 
