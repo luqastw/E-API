@@ -36,6 +36,7 @@ def db_session():
     """
     Cria banco limpo para cada teste (isolamento total).
     """
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
 
