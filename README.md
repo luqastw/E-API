@@ -267,6 +267,8 @@ GROQ_API_KEY=<your Groq API key>
 ### 3. Install dependencies and run migrations
 
 ```bash
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 alembic upgrade head
 ```
@@ -305,7 +307,7 @@ The pipeline runs via GitHub Actions (`.github/workflows/ci-cd.yml`) on pushes t
 
 **Quality job:**
 1. Python 3.12 setup with dependency caching
-2. PostgreSQL 16 as a service container with healthcheck
+2. PostgreSQL 16 and Redis 7 as service containers with healthchecks
 3. Dependency installation (includes PyTorch CPU for sentence-transformers)
 4. Alembic migrations
 5. Tests with pytest and coverage report
